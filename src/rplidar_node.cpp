@@ -35,6 +35,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <std_srvs/srv/empty.hpp>
+#include "sdkcommon.h"
 #include "sl_lidar.h"
 #include "math.h"
 
@@ -322,6 +323,7 @@ class RPlidarNode : public rclcpp::Node
             max_distance = (float)current_scan_mode.max_distance;
             RCLCPP_INFO(this->get_logger(), "current scan mode: %s, sample rate: %d Khz, max_distance: %.1f m, scan frequency:%.1f Hz, ",
                 current_scan_mode.scan_mode, (int)(1000 / current_scan_mode.us_per_sample + 0.5), max_distance, scan_frequency);
+            scan_time_increment = current_scan_mode.us_per_sample * 1e-6;
             return true;
         }
         else
@@ -427,8 +429,8 @@ public:
 
         //drv->setMotorSpeed();
 
+        sl_u64 timestamp_us;
         rclcpp::Time start_scan_time;
-        rclcpp::Time end_scan_time;
         double scan_duration;
         while (rclcpp::ok() && !need_exit) {
             sl_lidar_response_measurement_node_hq_t nodes[8192];
@@ -445,10 +447,9 @@ public:
                 }
             }
 
-            start_scan_time = this->now();
-            op_result = drv->grabScanDataHq(nodes, count);
-            end_scan_time = this->now();
-            scan_duration = (end_scan_time - start_scan_time).seconds();
+            op_result = drv->grabScanDataHqWithTimeStamp(nodes, count, timestamp_us);
+            start_scan_time = this->now() + rclcpp::Duration(std::chrono::microseconds(timestamp_us - ::getus()));
+            scan_duration = (count - 1) * scan_time_increment;
 
             if (op_result == SL_RESULT_OK) {
                 op_result = drv->ascendScanData(nodes, count);
@@ -548,6 +549,7 @@ public:
     size_t angle_compensate_multiple = 1;//it stand of angle compensate at per 1 degree
     std::string scan_mode;
     float scan_frequency;
+    float scan_time_increment;
     /* State */
     bool is_scanning = false;
 
